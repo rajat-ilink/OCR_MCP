@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ocr-mcp"
+version = "0.1.0"
+description = "OCR MCP server (Streamable HTTP) backed by Azure AI Document Intelligence"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.3,<3",
+    "azure-ai-documentintelligence>=1.0.2,<2",
+    "aiohttp>=3.9",  # async transport for the Azure SDK
+    "httpx>=0.28,<1",
+    "pydantic-settings>=2.7,<3",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+ocr-mcp = "ocr_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ocr_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ocr-mcp
+    runtime: python
+    plan: starter            # free tier sleeps after 15 min idle; bad for agent tool calls
+    buildCommand: pip install .
+    startCommand: python -m ocr_mcp
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: MCP_HOST
+        value: 0.0.0.0
+      - key: MCP_PORT
+        value: "10000"       # Render's default PORT
+      - key: MCP_PATH
+        value: /mcp
+      - key: AZURE_DOCINTEL_MODEL_ID
+        value: prebuilt-read
+      - key: MCP_AUTH_TOKEN
+        generateValue: true  # Render generates a random secret; copy it from the dashboard
+      - key: AZURE_DOCINTEL_ENDPOINT
+        sync: false          # prompted for on first deploy
+      - key: AZURE_DOCINTEL_KEY
+        sync: false
+      - key: MCP_ALLOWED_HOSTS
+        sync: false          # e.g. ocr-mcp.onrender.com,ocr-mcp.onrender.com:443
