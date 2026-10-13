@@ -47,6 +47,8 @@ def main() -> None:
         port=settings.mcp_port,
         log_level=settings.log_level.lower(),
         server_header=False,
+        # The access log would print ?token=... URLs.
+        access_log=not settings.mcp_allow_query_token,
     )
 
 

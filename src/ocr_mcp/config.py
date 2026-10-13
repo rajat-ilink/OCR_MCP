@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     mcp_path: str = "/mcp"  # streamable-http endpoint
     mcp_sse_path: str = "/sse"  # sse stream endpoint (clients POST to /messages/)
     mcp_auth_token: SecretStr | None = None
+    # For clients that cannot send headers: accept ?token= on the SSE connect URL (less secure).
+    mcp_allow_query_token: bool = False
     mcp_allowed_hosts: CsvList = Field(default_factory=list)
     mcp_allowed_origins: CsvList = Field(default_factory=list)
     log_level: str = "INFO"

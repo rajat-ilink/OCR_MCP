@@ -140,3 +140,45 @@ async def test_sse_transport_end_to_end(settings, fake):
 def test_stdio_needs_no_token_when_exposed_host():
     base = dict(_env_file=None, azure_docintel_endpoint="https://a.b/", azure_docintel_key="k")
     Settings(mcp_transport="stdio", mcp_host="0.0.0.0", **base)
+
+
+async def test_sse_query_token(settings, fake):
+    import asyncio
+
+    import uvicorn
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+
+    port = _free_port()
+    token = "y" * 32
+    cfg = Settings(
+        _env_file=None,
+        azure_docintel_endpoint=settings.azure_docintel_endpoint,
+        azure_docintel_key="k",
+        mcp_transport="sse",
+        mcp_port=port,
+        mcp_auth_token=token,
+        mcp_allow_query_token=True,
+    )
+    server = uvicorn.Server(
+        uvicorn.Config(create_app(cfg, fake), host="127.0.0.1", port=port, log_level="warning")
+    )
+    task = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            await asyncio.sleep(0.05)
+        base = f"http://127.0.0.1:{port}"
+        async with httpx.AsyncClient() as http:
+            assert (await http.get(f"{base}/sse")).status_code == 401
+            assert (await http.get(f"{base}/sse?token=wrong")).status_code == 401
+            assert (await http.post(f"{base}/messages/", json={})).status_code == 401
+            # query token never unlocks the streamable endpoint or other paths
+            assert (await http.post(f"{base}/mcp?token={token}", json={})).status_code == 401
+        async with sse_client(f"{base}/sse?token={token}") as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("extract_document_text", {"document_base64": b64(PDF)})
+                assert result.structured_content["text"] == "Hello world"
+    finally:
+        server.should_exit = True
+        await task

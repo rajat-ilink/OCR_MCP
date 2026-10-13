@@ -198,5 +198,10 @@ def create_app(settings: Settings, analyzer: Analyzer | None = None) -> ASGIApp:
         )
     # Optional bearer-token gate wrapped around the whole app (required when exposed).
     if settings.mcp_auth_token is not None:
-        return BearerAuthMiddleware(app, settings.mcp_auth_token.get_secret_value())
+        return BearerAuthMiddleware(
+            app,
+            settings.mcp_auth_token.get_secret_value(),
+            allow_query_token=settings.mcp_allow_query_token and settings.mcp_transport == "sse",
+            sse_path=settings.mcp_sse_path,
+        )
     return app
