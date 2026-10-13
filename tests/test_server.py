@@ -82,3 +82,61 @@ def test_exposed_bind_requires_hardening():
 
 def test_secret_not_in_repr(settings):
     assert "test-key-not-real" not in repr(settings)
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def test_sse_transport_end_to_end(settings, fake):
+    """Real SSE round-trip: GET /sse stream + POST /messages/, with bearer auth."""
+    import asyncio
+
+    import uvicorn
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+
+    port = _free_port()
+    sse_settings = Settings(
+        _env_file=None,
+        azure_docintel_endpoint=settings.azure_docintel_endpoint,
+        azure_docintel_key="k",
+        mcp_transport="sse",
+        mcp_port=port,
+        mcp_auth_token="x" * 32,
+    )
+    server = uvicorn.Server(
+        uvicorn.Config(create_app(sse_settings, fake), host="127.0.0.1", port=port, log_level="warning")
+    )
+    task = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            await asyncio.sleep(0.05)
+        base = f"http://127.0.0.1:{port}"
+        async with httpx.AsyncClient() as http:
+            assert (await http.get(f"{base}/healthz")).status_code == 200
+            assert (await http.get(f"{base}/sse")).status_code == 401  # no token
+
+        headers = {"Authorization": "Bearer " + "x" * 32}
+        async with sse_client(f"{base}/sse", headers=headers) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = (await session.list_tools()).tools
+                assert [t.name for t in tools] == ["extract_document_text"]
+                result = await session.call_tool(
+                    "extract_document_text", {"document_base64": b64(PDF)}
+                )
+                assert not result.is_error
+                assert result.structured_content["text"] == "Hello world"
+    finally:
+        server.should_exit = True
+        await task
+
+
+def test_stdio_needs_no_token_when_exposed_host():
+    base = dict(_env_file=None, azure_docintel_endpoint="https://a.b/", azure_docintel_key="k")
+    Settings(mcp_transport="stdio", mcp_host="0.0.0.0", **base)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -43,9 +43,12 @@ class Settings(BaseSettings):
     url_max_redirects: int = Field(3, ge=0, le=10)
 
     # Server
+    # streamable-http (default), sse (legacy, long-lived stream + POST channel), or stdio (local subprocess)
+    mcp_transport: Literal["streamable-http", "sse", "stdio"] = "streamable-http"
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(8000, ge=1, le=65535)
-    mcp_path: str = "/mcp"
+    mcp_path: str = "/mcp"  # streamable-http endpoint
+    mcp_sse_path: str = "/sse"  # sse stream endpoint (clients POST to /messages/)
     mcp_auth_token: SecretStr | None = None
     mcp_allowed_hosts: CsvList = Field(default_factory=list)
     mcp_allowed_origins: CsvList = Field(default_factory=list)
@@ -77,6 +80,13 @@ class Settings(BaseSettings):
             raise ValueError("MCP_PATH must start with '/'")
         return value
 
+    @field_validator("mcp_sse_path")
+    @classmethod
+    def _sse_path(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("MCP_SSE_PATH must start with '/'")
+        return value
+
     @field_validator("log_level")
     @classmethod
     def _level(cls, value: str) -> str:
@@ -104,7 +114,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_hardening_when_exposed(self) -> Settings:
-        if not self.is_loopback_bind:
+        if self.mcp_transport != "stdio" and not self.is_loopback_bind:
             if self.mcp_auth_token is None or len(self.mcp_auth_token.get_secret_value()) < 16:
                 raise ValueError(
                     "MCP_AUTH_TOKEN (>=16 chars) is required when MCP_HOST is not loopback"

@@ -15,6 +15,17 @@ copy .env.example .env      # then edit .env: set AZURE_DOCINTEL_ENDPOINT and AZ
 Serves `http://127.0.0.1:8000/mcp` (health check: `/healthz`). `.env` is git-ignored; secrets are held as
 `SecretStr` and never logged or returned.
 
+## Transports (`MCP_TRANSPORT`)
+
+| Value | Endpoint | Notes |
+|---|---|---|
+| `streamable-http` (default) | `/mcp` | Stateless; scales horizontally. |
+| `sse` (legacy) | `GET /sse` (stream) + `POST /messages/` | Sessions live in process memory: run **one instance** (or sticky routing). Same bearer auth, host checks and body-size cap. |
+| `stdio` | stdin/stdout | Local subprocess; no network listener, no token needed. Run `python -m ocr_mcp` with `MCP_TRANSPORT=stdio`. |
+
+SSE client config: `{ "type": "sse", "url": "https://<host>/sse", "headers": { "Authorization": "Bearer <token>" } }`.
+`/healthz` is available in both HTTP modes.
+
 ## Tool: `extract_document_text`
 
 | Argument | Type | Notes |

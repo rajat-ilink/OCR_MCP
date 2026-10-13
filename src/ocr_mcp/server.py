@@ -158,7 +158,11 @@ def create_server(settings: Settings, analyzer: Analyzer | None = None) -> MCPSe
 
 
 def create_app(settings: Settings, analyzer: Analyzer | None = None) -> ASGIApp:
-    """ASGI app serving MCP over Streamable HTTP (stateless; scales horizontally)."""
+    """ASGI app serving MCP over Streamable HTTP (default) or legacy SSE, per ``MCP_TRANSPORT``.
+
+    Streamable HTTP is stateless and scales horizontally. SSE keeps per-client sessions in
+    process memory, so run a single instance (or use sticky routing) when ``MCP_TRANSPORT=sse``.
+    """
     mcp = create_server(settings, analyzer)
 
     # DNS-rebinding protection: reject requests whose Host/Origin header isn't expected,
@@ -172,15 +176,26 @@ def create_app(settings: Settings, analyzer: Analyzer | None = None) -> ASGIApp:
     else:
         security = None  # SDK applies loopback-only defaults for 127.0.0.1/localhost binds
 
-    app: Starlette = mcp.streamable_http_app(
-        streamable_http_path=settings.mcp_path,  # the endpoint clients connect to (/mcp)
-        stateless_http=True,  # no per-client sessions -> any replica can serve any request
-        json_response=True,  # reply with plain JSON instead of an SSE stream
-        # Reject oversized HTTP bodies up front: base64 is ~4/3 the file size.
-        max_request_body_size=int(settings.max_file_bytes * 4 / 3) + _BODY_OVERHEAD,
-        transport_security=security,
-        host=settings.mcp_host,
-    )
+    # Reject oversized HTTP bodies up front: base64 is ~4/3 the file size.
+    max_body = int(settings.max_file_bytes * 4 / 3) + _BODY_OVERHEAD
+    app: Starlette
+    if settings.mcp_transport == "sse":
+        app = mcp.sse_app(
+            sse_path=settings.mcp_sse_path,  # GET: long-lived event stream
+            message_path="/messages/",  # POST: client -> server messages
+            max_request_body_size=max_body,
+            transport_security=security,
+            host=settings.mcp_host,
+        )
+    else:
+        app = mcp.streamable_http_app(
+            streamable_http_path=settings.mcp_path,  # the endpoint clients connect to (/mcp)
+            stateless_http=True,  # no per-client sessions -> any replica can serve any request
+            json_response=True,  # reply with plain JSON instead of an SSE stream
+            max_request_body_size=max_body,
+            transport_security=security,
+            host=settings.mcp_host,
+        )
     # Optional bearer-token gate wrapped around the whole app (required when exposed).
     if settings.mcp_auth_token is not None:
         return BearerAuthMiddleware(app, settings.mcp_auth_token.get_secret_value())
